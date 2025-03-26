@@ -1,1 +1,3 @@
-"# cronometro_app" 
+# cronometro
+
+A new Flutter project.
