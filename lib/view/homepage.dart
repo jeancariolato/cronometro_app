@@ -2,9 +2,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 
-
 class Homepage extends StatefulWidget {
-  const Homepage({super.key});
+  final Function(bool) onThemeChanged; // Callback para alternar tema
+  const Homepage({super.key, required this.onThemeChanged});
 
   @override
   State<Homepage> createState() => _HomepageState();
@@ -17,7 +17,7 @@ class _HomepageState extends State<Homepage> {
   List<Duration> voltas = [];
   List<Duration> temposTotais = [];
   DateTime? _startTime;
-  Duration tempoSalvo = Duration.zero; // ⏳ Armazena o tempo antes do pause
+  Duration tempoSalvo = Duration.zero;
 
   @override
   void dispose() {
@@ -27,62 +27,99 @@ class _HomepageState extends State<Homepage> {
   }
 
   String formatTime(Duration duration) {
-    return '${duration.inMinutes.toString().padLeft(2, '0')}:' 
-           '${(duration.inSeconds % 60).toString().padLeft(2, '0')}.' 
+    return '${duration.inMinutes.toString().padLeft(2, '0')}:'
+           '${(duration.inSeconds % 60).toString().padLeft(2, '0')}.'
            '${(duration.inMilliseconds % 1000 ~/ 10).toString().padLeft(2, '0')}';
   }
 
   @override
   Widget build(BuildContext context) {
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+
     return Scaffold(
-      backgroundColor: Colors.black,
       appBar: AppBar(
-        backgroundColor: Colors.black,
-        title: Text('Cronômetro', style: TextStyle(color: Colors.white)),
+        title: Text('Cronômetro', style: TextStyle(color: Theme.of(context).appBarTheme.titleTextStyle!.color)),
         centerTitle: true,
+        actions: [
+          IconButton(
+            icon: Icon(
+              isDarkMode ? Icons.light_mode : Icons.dark_mode,
+              color: Theme.of(context).appBarTheme.titleTextStyle!.color,
+            ),
+            onPressed: () {
+              widget.onThemeChanged(!isDarkMode); // Alterna o tema
+            },
+            tooltip: isDarkMode ? 'Mudar para modo claro' : 'Mudar para modo escuro',
+          ),
+        ],
       ),
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text(
-              '${duracao.inHours.toString().padLeft(2, '0')}:' 
-              '${(duracao.inMinutes % 60).toString().padLeft(2, '0')}:' 
-              '${(duracao.inSeconds % 60).toString().padLeft(2, '0')}',
-              style: TextStyle(fontSize: 48, fontWeight: FontWeight.bold, color: Colors.white),
+            Semantics(
+              label: "Tempo decorrido: ${formatTime(duracao)}",
+              child: Text(
+                '${duracao.inHours.toString().padLeft(2, '0')}:'
+                '${(duracao.inMinutes % 60).toString().padLeft(2, '0')}:'
+                '${(duracao.inSeconds % 60).toString().padLeft(2, '0')}',
+                style: TextStyle(
+                  fontSize: 48,
+                  fontWeight: FontWeight.bold,
+                  color: Theme.of(context).textTheme.bodyMedium!.color,
+                ),
+              ),
             ),
             SizedBox(height: 20),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.white, foregroundColor: Colors.black,
-                    shape: CircleBorder(), padding: EdgeInsets.all(25),
-                    minimumSize: Size(80, 80),
+                Tooltip(
+                  message: rodando ? "Pausar cronômetro" : "Iniciar cronômetro",
+                  child: Semantics(
+                    label: rodando ? "Botão para pausar o cronômetro" : "Botão para iniciar o cronômetro",
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        shape: CircleBorder(),
+                        padding: EdgeInsets.all(25),
+                        minimumSize: Size(80, 80),
+                      ),
+                      onPressed: startStop,
+                      child: Icon(rodando ? Icons.pause : Icons.play_arrow, size: 35),
+                    ),
                   ),
-                  onPressed: startStop,
-                  child: Icon(rodando ? Icons.pause : Icons.play_arrow, size: 35),
                 ),
                 SizedBox(width: 20),
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.white, foregroundColor: Colors.black,
-                    shape: CircleBorder(), padding: EdgeInsets.all(25),
-                    minimumSize: Size(80, 80),
+                Tooltip(
+                  message: "Reiniciar cronômetro",
+                  child: Semantics(
+                    label: "Botão para reiniciar o cronômetro",
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        shape: CircleBorder(),
+                        padding: EdgeInsets.all(25),
+                        minimumSize: Size(80, 80),
+                      ),
+                      onPressed: resetar,
+                      child: Icon(Icons.refresh, size: 35),
+                    ),
                   ),
-                  onPressed: resetar,
-                  child: Icon(Icons.refresh, size: 35),
                 ),
                 SizedBox(width: 20),
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.white, foregroundColor: Colors.black,
-                    shape: CircleBorder(), padding: EdgeInsets.all(25),
-                    minimumSize: Size(80, 80),
+                Tooltip(
+                  message: "Adicionar volta",
+                  child: Semantics(
+                    label: "Botão para adicionar uma volta",
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        shape: CircleBorder(),
+                        padding: EdgeInsets.all(25),
+                        minimumSize: Size(80, 80),
+                      ),
+                      onPressed: adicionarVolta,
+                      child: Icon(Icons.flag, size: 35),
+                    ),
                   ),
-                  onPressed: adicionarVolta,
-                  child: Icon(Icons.flag, size: 35),
                 ),
               ],
             ),
@@ -96,9 +133,27 @@ class _HomepageState extends State<Homepage> {
                     title: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text('Volta ${index + 1}', style: TextStyle(color: Colors.white)),
-                        Text(formatTime(voltas[index]), style: TextStyle(color: Colors.grey)),
-                        Text(formatTime(temposTotais[index]), style: TextStyle(color: Colors.white70)),
+                        Text(
+                          'Volta ${index + 1}',
+                          style: TextStyle(
+                            color: Theme.of(context).textTheme.bodyMedium!.color,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        Text(
+                          formatTime(voltas[index]),
+                          style: TextStyle(
+                            color: isDarkMode ? Colors.white : Colors.black, // Branco no dark mode, preto no light mode
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        Text(
+                          formatTime(temposTotais[index]),
+                          style: TextStyle(
+                            color: Theme.of(context).textTheme.titleMedium!.color,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                       ],
                     ),
                   );
@@ -126,7 +181,7 @@ class _HomepageState extends State<Homepage> {
       cronometro?.cancel();
       await FlutterForegroundTask.stopService();
       setState(() {
-        tempoSalvo = duracao; // Salva o tempo antes de pausar
+        tempoSalvo = duracao;
         rodando = false;
       });
     } else {
