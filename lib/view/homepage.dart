@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'package:cronometro/services/notification_services.dart';
+import 'package:cronometro/viewmodel/notification_viewmodel.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 
@@ -11,6 +13,10 @@ class Homepage extends StatefulWidget {
 }
 
 class _HomepageState extends State<Homepage> {
+  final NotificationService _notificationService = NotificationService();
+  Timer? _notificationUpdateTimer;
+  Timer? _inactivityTimer;
+
   Duration duracao = Duration.zero;
   Timer? cronometro;
   bool rodando = false;
@@ -20,16 +26,23 @@ class _HomepageState extends State<Homepage> {
   Duration tempoSalvo = Duration.zero;
 
   @override
+  void initState() {
+    super.initState();
+    _notificationService.initialize();
+  }
+
+  @override
   void dispose() {
     cronometro?.cancel();
     FlutterForegroundTask.stopService();
+
     super.dispose();
   }
 
   String formatTime(Duration duration) {
     return '${duration.inMinutes.toString().padLeft(2, '0')}:'
-           '${(duration.inSeconds % 60).toString().padLeft(2, '0')}.'
-           '${(duration.inMilliseconds % 1000 ~/ 10).toString().padLeft(2, '0')}';
+        '${(duration.inSeconds % 60).toString().padLeft(2, '0')}.'
+        '${(duration.inMilliseconds % 1000 ~/ 10).toString().padLeft(2, '0')}';
   }
 
   @override
@@ -38,7 +51,9 @@ class _HomepageState extends State<Homepage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('Cronômetro', style: TextStyle(color: Theme.of(context).appBarTheme.titleTextStyle!.color)),
+        title: Text('Cronômetro',
+            style: TextStyle(
+                color: Theme.of(context).appBarTheme.titleTextStyle!.color)),
         centerTitle: true,
         actions: [
           IconButton(
@@ -49,7 +64,8 @@ class _HomepageState extends State<Homepage> {
             onPressed: () {
               widget.onThemeChanged(!isDarkMode); // Alterna o tema
             },
-            tooltip: isDarkMode ? 'Mudar para modo claro' : 'Mudar para modo escuro',
+            tooltip:
+                isDarkMode ? 'Mudar para modo claro' : 'Mudar para modo escuro',
           ),
         ],
       ),
@@ -77,7 +93,9 @@ class _HomepageState extends State<Homepage> {
                 Tooltip(
                   message: rodando ? "Pausar cronômetro" : "Iniciar cronômetro",
                   child: Semantics(
-                    label: rodando ? "Botão para pausar o cronômetro" : "Botão para iniciar o cronômetro",
+                    label: rodando
+                        ? "Botão para pausar o cronômetro"
+                        : "Botão para iniciar o cronômetro",
                     child: ElevatedButton(
                       style: ElevatedButton.styleFrom(
                         shape: CircleBorder(),
@@ -85,7 +103,8 @@ class _HomepageState extends State<Homepage> {
                         minimumSize: Size(80, 80),
                       ),
                       onPressed: startStop,
-                      child: Icon(rodando ? Icons.pause : Icons.play_arrow, size: 35),
+                      child: Icon(rodando ? Icons.pause : Icons.play_arrow,
+                          size: 35),
                     ),
                   ),
                 ),
@@ -136,21 +155,26 @@ class _HomepageState extends State<Homepage> {
                         Text(
                           'Volta ${index + 1}',
                           style: TextStyle(
-                            color: Theme.of(context).textTheme.bodyMedium!.color,
+                            color:
+                                Theme.of(context).textTheme.bodyMedium!.color,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
                         Text(
                           formatTime(voltas[index]),
                           style: TextStyle(
-                            color: isDarkMode ? Colors.white : Colors.black, // Branco no dark mode, preto no light mode
+                            color: isDarkMode
+                                ? Colors.white
+                                : Colors
+                                    .black, // Branco no dark mode, preto no light mode
                             fontWeight: FontWeight.bold,
                           ),
                         ),
                         Text(
                           formatTime(temposTotais[index]),
                           style: TextStyle(
-                            color: Theme.of(context).textTheme.titleMedium!.color,
+                            color:
+                                Theme.of(context).textTheme.titleMedium!.color,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
@@ -178,21 +202,44 @@ class _HomepageState extends State<Homepage> {
 
   void startStop() async {
     if (rodando) {
+      // Pausando o cronômetro
       cronometro?.cancel();
-      await FlutterForegroundTask.stopService();
+      _notificationUpdateTimer?.cancel();
+      _notificationService.cancelRunningTimerNotification();
+
+      // Inicia timer de inatividade (10 segundos)
+      _inactivityTimer?.cancel();
+      _inactivityTimer = Timer(Duration(seconds: 10), () {
+        if (!rodando) {
+          _notificationService.showInactivityNotification(formatTime(duracao));
+        }
+      });
+
       setState(() {
         tempoSalvo = duracao;
         rodando = false;
       });
     } else {
+      // Iniciando o cronômetro
       _startTime = DateTime.now();
+      _inactivityTimer?.cancel();
+
       cronometro = Timer.periodic(Duration(milliseconds: 10), (_) async {
         final now = DateTime.now();
         setState(() {
           duracao = tempoSalvo + now.difference(_startTime!);
         });
       });
-      startForegroundService();
+
+      // Mostra notificação persistente e a atualiza a cada segundo
+      _notificationService.showRunningTimerNotification(formatTime(duracao));
+      _notificationUpdateTimer = Timer.periodic(Duration(seconds: 1), (_) {
+        if (rodando) {
+          _notificationService
+              .showRunningTimerNotification(formatTime(duracao));
+        }
+      });
+
       setState(() {
         rodando = true;
       });
@@ -201,7 +248,12 @@ class _HomepageState extends State<Homepage> {
 
   void resetar() {
     cronometro?.cancel();
-    FlutterForegroundTask.stopService();
+    _notificationUpdateTimer?.cancel();
+    _inactivityTimer?.cancel();
+
+    _notificationService.cancelAllNotifications();
+    _notificationService.showResetNotification();
+
     setState(() {
       duracao = Duration.zero;
       tempoSalvo = Duration.zero;
@@ -215,9 +267,14 @@ class _HomepageState extends State<Homepage> {
   void adicionarVolta() {
     if (rodando) {
       setState(() {
-        final voltaAtual = voltas.isEmpty ? duracao : duracao - temposTotais.last;
+        final voltaAtual =
+            voltas.isEmpty ? duracao : duracao - temposTotais.last;
         voltas.add(voltaAtual);
         temposTotais.add(duracao);
+
+        // Mostra notificação de volta registrada
+        _notificationService.showLapNotification(
+            voltas.length, formatTime(voltaAtual), formatTime(duracao));
       });
     }
   }
